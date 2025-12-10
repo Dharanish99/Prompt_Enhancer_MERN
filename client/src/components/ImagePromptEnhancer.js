@@ -1,13 +1,13 @@
 import { useState } from "react";
 import axios from "axios";
+import { useAuth } from "@clerk/clerk-react"; // <--- 1. Import Clerk
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  ImageIcon, Sparkles, Loader2, ArrowRight,
-  MessageCircleQuestion, CheckCircle2, RefreshCcw, Copy, Check
+import { 
+  ImageIcon, Sparkles, Loader2, ArrowRight, 
+  MessageCircleQuestion, CheckCircle2, RefreshCcw, Copy, Check 
 } from "lucide-react";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { useAuth } from "@clerk/clerk-react";
 
 // --- UTILS & SHARED UI ---
 function cn(...inputs) { return twMerge(clsx(inputs)); }
@@ -44,7 +44,7 @@ const CopyButton = ({ text }) => {
 
 // Custom Toggle Switch
 const RefineToggle = ({ enabled, setEnabled }) => (
-  <div
+  <div 
     onClick={() => setEnabled(!enabled)}
     className="flex cursor-pointer items-center gap-3 rounded-full border border-white/5 bg-black/40 px-3 py-1.5 transition-colors hover:bg-black/60"
   >
@@ -52,7 +52,7 @@ const RefineToggle = ({ enabled, setEnabled }) => (
       Refine Mode
     </span>
     <div className={cn("relative h-5 w-9 rounded-full transition-colors duration-300", enabled ? "bg-purple-500" : "bg-neutral-700")}>
-      <motion.div
+      <motion.div 
         className="absolute top-1 h-3 w-3 rounded-full bg-white shadow-sm"
         animate={{ x: enabled ? 18 : 4 }}
         transition={{ type: "spring", stiffness: 500, damping: 30 }}
@@ -63,23 +63,31 @@ const RefineToggle = ({ enabled, setEnabled }) => (
 
 // --- MAIN COMPONENT ---
 const ImagePromptEnhancer = () => {
-  const { getToken } = useAuth();
-
+  const { getToken } = useAuth(); // <--- 2. Get Token Hook
+  
   // State Machine: 'input' -> 'questions' -> 'result'
   const [step, setStep] = useState("input");
-
+  
   // Data State
   const [imagePrompt, setImagePrompt] = useState("");
   const [imageModel, setImageModel] = useState("midjourney");
   const [isRefineMode, setIsRefineMode] = useState(false);
-
+  
   // API Response State
   const [generatedQuestions, setGeneratedQuestions] = useState([]);
   const [userAnswers, setUserAnswers] = useState({});
   const [finalResult, setFinalResult] = useState("");
-
+  
   // Loading State
   const [loading, setLoading] = useState(false);
+
+  // Helper to get headers with token
+  const getAuthHeaders = async () => {
+    const token = await getToken();
+    return {
+      headers: { Authorization: `Bearer ${token}` }
+    };
+  };
 
   // 1. Handle Initial Enhancement / Analysis
   const handleInitialAction = async () => {
@@ -87,31 +95,28 @@ const ImagePromptEnhancer = () => {
     setLoading(true);
 
     try {
-      const token = await getToken();
+      const config = await getAuthHeaders(); // Get Token
 
       if (isRefineMode) {
         // --- FLOW A: HUMAN-IN-THE-LOOP ---
-        const res = await axios.post("/api/analyze-prompt", { prompt: imagePrompt }, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const res = await axios.post("/api/analyze-prompt", { prompt: imagePrompt }, config);
         setGeneratedQuestions(res.data.questions);
         setStep("questions");
-        setLoading(false);
       } else {
         // --- FLOW B: INSTANT ENHANCE ---
-        const res = await axios.post("/api/image-enhance", {
-          prompt: imagePrompt,
-          model: imageModel
-        }, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const res = await axios.post("/api/image-enhance", { 
+          prompt: imagePrompt, 
+          model: imageModel 
+        }, config);
+        
         setFinalResult(res.data.enhanced);
         setStep("result");
-        setLoading(false);
       }
     } catch (err) {
       console.error("Error:", err);
-      setLoading(false);
+      // Optional: Add visible error toast here
+    } finally {
+        setLoading(false);
     }
   };
 
@@ -119,21 +124,21 @@ const ImagePromptEnhancer = () => {
   const handleFinalize = async () => {
     setLoading(true);
     try {
-      const token = await getToken();
-      const res = await axios.post("/api/finalize-prompt", {
-        original: imagePrompt,
+      const config = await getAuthHeaders(); // Get Token
+
+      const res = await axios.post("/api/finalize-prompt", { 
+        original: imagePrompt, 
         answers: userAnswers,
-        model: imageModel
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+        model: imageModel 
+      }, config);
+      
       setFinalResult(res.data.enhanced);
       setStep("result");
-      setLoading(false);
-
+      
     } catch (err) {
       console.error(err);
-      setLoading(false);
+    } finally {
+        setLoading(false);
     }
   };
 
@@ -146,7 +151,7 @@ const ImagePromptEnhancer = () => {
 
   return (
     <GlassCard className="h-full min-h-[500px]">
-
+      
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -155,7 +160,7 @@ const ImagePromptEnhancer = () => {
           </div>
           <h2 className="text-xl font-semibold text-white">Diffusion Enhancer</h2>
         </div>
-
+        
         {/* Toggle only visible in Input mode */}
         {step === "input" && (
           <RefineToggle enabled={isRefineMode} setEnabled={setIsRefineMode} />
@@ -164,7 +169,7 @@ const ImagePromptEnhancer = () => {
 
       <div className="flex-1 flex flex-col">
         <AnimatePresence mode="wait">
-
+          
           {/* === STEP 1: INPUT === */}
           {step === "input" && (
             <motion.div
@@ -238,7 +243,7 @@ const ImagePromptEnhancer = () => {
                 {generatedQuestions.map((q, idx) => (
                   <div key={idx} className="space-y-1.5">
                     <label className="text-xs font-medium text-neutral-400 ml-1">{q}</label>
-                    <input
+                    <input 
                       type="text"
                       className="w-full rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm text-white focus:border-purple-500/50 focus:outline-none transition-colors"
                       placeholder="Type your preference..."
@@ -249,10 +254,10 @@ const ImagePromptEnhancer = () => {
               </div>
 
               <div className="flex justify-between pt-4 border-t border-white/5">
-                <button onClick={() => setStep("input")} className="text-xs text-neutral-500 hover:text-white transition-colors">
-                  Back
-                </button>
-                <button
+                 <button onClick={() => setStep("input")} className="text-xs text-neutral-500 hover:text-white transition-colors">
+                   Back
+                 </button>
+                 <button
                   onClick={handleFinalize}
                   disabled={loading}
                   className="flex items-center gap-2 rounded-lg bg-purple-600 px-6 py-2 text-sm font-semibold text-white hover:bg-purple-500 transition-colors"

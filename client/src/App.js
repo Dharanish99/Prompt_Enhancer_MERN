@@ -3,11 +3,15 @@ import Navbar from "./components/Navbar";
 import HomePage from "./components/HomePage";
 import LoginPage from "./components/LoginPage";
 import ImagePromptEnhancer from "./components/ImagePromptEnhancer";
+import HistorySidebar from "./components/HistorySidebar"; // Import new component
 import { useAuth } from "@clerk/clerk-react";
 
 function App() {
   const [currentView, setCurrentView] = useState("home"); // home, chat, image, templates
   const { isSignedIn, isLoaded } = useAuth();
+  
+  // --- NEW STATE FOR HISTORY SIDEBAR ---
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   // Show loading while Clerk is initializing
   if (!isLoaded) {
@@ -60,11 +64,22 @@ function App() {
         <div className="absolute bottom-0 right-1/4 h-96 w-96 rounded-full bg-purple-900/10 blur-[120px]" />
       </div>
 
-      <Navbar activeTab={currentView} onNavigate={setCurrentView} />
+      {/* Pass the open handler to Navbar */}
+      <Navbar 
+        activeTab={currentView} 
+        onNavigate={setCurrentView} 
+        onOpenHistory={() => setIsHistoryOpen(true)} 
+      />
       
       <main>
         {renderView()}
       </main>
+
+      {/* --- RENDER HISTORY SIDEBAR --- */}
+      <HistorySidebar 
+        isOpen={isHistoryOpen} 
+        onClose={() => setIsHistoryOpen(false)} 
+      />
     </div>
   );
 }

@@ -3,7 +3,7 @@ import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   ImageIcon, Sparkles, Loader2, ArrowRight, 
-  MessageCircleQuestion, CheckCircle2, RefreshCcw, Copy, Check, ChevronDown 
+  MessageCircleQuestion, CheckCircle2, RefreshCcw, Copy, Check 
 } from "lucide-react";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -18,8 +18,8 @@ const GlassCard = ({ children, className }) => (
     transition={{ duration: 0.5 }}
     className={cn(
       "relative flex flex-col overflow-hidden rounded-3xl border border-white/10 bg-neutral-900/60 backdrop-blur-xl transition-all",
-      "p-4 md:p-6", // Tighter padding on mobile
-      "h-auto md:h-full", // Adaptive height
+      "p-4 md:p-6", 
+      "h-auto md:h-full", 
       className
     )}
   >
@@ -30,11 +30,23 @@ const GlassCard = ({ children, className }) => (
 
 const CopyButton = ({ text }) => {
   const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!text) return;
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      // Fallback for older browsers or non-HTTPS contexts
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
   return (
     <button onClick={handleCopy} className="absolute right-2 top-2 rounded-lg bg-white/5 p-2 text-neutral-400 hover:bg-white/10 hover:text-white transition-colors">
@@ -43,7 +55,6 @@ const CopyButton = ({ text }) => {
   );
 };
 
-// Refine Toggle - Made smaller for mobile
 const RefineToggle = ({ enabled, setEnabled }) => (
   <div 
     onClick={() => setEnabled(!enabled)}
@@ -63,15 +74,16 @@ const RefineToggle = ({ enabled, setEnabled }) => (
 );
 
 // --- MAIN COMPONENT ---
-const ImagePromptEnhancer = () => {
-  const [step, setStep] = useState("input"); // 'input' -> 'questions' -> 'result'
+// TASK 2: Accept initial props
+const ImagePromptEnhancer = ({ initialPrompt = "", initialModel = "midjourney" }) => {
+  const [step, setStep] = useState("input"); 
   
-  // Data State
-  const [imagePrompt, setImagePrompt] = useState("");
-  const [imageModel, setImageModel] = useState("midjourney");
+  // Local State (for fast typing performance)
+  const [imagePrompt, setImagePrompt] = useState(initialPrompt);
+  const [imageModel, setImageModel] = useState(initialModel);
   const [isRefineMode, setIsRefineMode] = useState(false);
   
-  // API Response State
+  // API State
   const [generatedQuestions, setGeneratedQuestions] = useState([]);
   const [userAnswers, setUserAnswers] = useState({});
   const [finalResult, setFinalResult] = useState("");
@@ -79,7 +91,19 @@ const ImagePromptEnhancer = () => {
   const [loading, setLoading] = useState(false);
   const questionsEndRef = useRef(null);
 
-  // Auto-scroll to bottom when new questions appear (UX improvement)
+  // TASK 2 COMPLETE: Sync with Parent (The Remix Logic)
+  // Whenever App.js passes a new "Remix", we update our local state instantly.
+  useEffect(() => {
+    if (initialPrompt) {
+      setImagePrompt(initialPrompt);
+      setStep("input"); // Reset UI to input view to show the new text
+    }
+    if (initialModel) {
+      setImageModel(initialModel);
+    }
+  }, [initialPrompt, initialModel]);
+
+  // Auto-scroll
   useEffect(() => {
     if (step === 'questions' && questionsEndRef.current) {
         questionsEndRef.current.scrollIntoView({ behavior: "smooth" });
@@ -92,7 +116,7 @@ const ImagePromptEnhancer = () => {
 
     try {
       if (isRefineMode) {
-        // MOCK SIMULATION (Replace with API):
+        // Mocking Refine logic (replace with real API later)
         setTimeout(() => {
           setGeneratedQuestions([
             "What is the artistic style? (e.g., Cyberpunk, Oil Painting)",
@@ -104,6 +128,7 @@ const ImagePromptEnhancer = () => {
         }, 1500);
 
       } else {
+        // Direct Enhance
         const res = await axios.post("/api/image-enhance", { 
           prompt: imagePrompt, 
           model: imageModel 
@@ -121,7 +146,7 @@ const ImagePromptEnhancer = () => {
   const handleFinalize = async () => {
     setLoading(true);
     try {
-      // MOCK SIMULATION:
+      // Mock Finalize (Replace with real API later)
       setTimeout(() => {
         const style = userAnswers[0] || "Photorealistic";
         const light = userAnswers[1] || "Cinematic lighting";
@@ -141,12 +166,11 @@ const ImagePromptEnhancer = () => {
     setFinalResult("");
     setGeneratedQuestions([]);
     setUserAnswers({});
+    // Note: We don't clear imagePrompt so user can tweak the same text
   };
 
   return (
     <GlassCard className="h-full">
-      
-      {/* Header - Stays fixed at top */}
       <div className="flex-none mb-4 md:mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 md:h-10 md:w-10 items-center justify-center rounded-xl bg-purple-500/10 text-purple-400">
@@ -160,13 +184,9 @@ const ImagePromptEnhancer = () => {
         )}
       </div>
 
-      {/* Main Content Area - Handles Scroll */}
       <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden"> 
-        {/* min-h-0 is CRITICAL for nested flex scrolling */}
-        
         <AnimatePresence mode="wait">
           
-          {/* === STEP 1: INPUT === */}
           {step === "input" && (
             <motion.div
               key="input"
@@ -175,7 +195,6 @@ const ImagePromptEnhancer = () => {
               exit={{ opacity: 0, x: -20 }}
               className="flex flex-col gap-4 h-full"
             >
-              {/* Model Select */}
               <div className="flex-none flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                 {['midjourney', 'dalle', 'leonardo', 'banana'].map((m) => (
                   <button
@@ -193,7 +212,6 @@ const ImagePromptEnhancer = () => {
                 ))}
               </div>
 
-              {/* Text Area - Takes remaining space */}
               <textarea
                 value={imagePrompt}
                 onChange={(e) => setImagePrompt(e.target.value)}
@@ -201,7 +219,6 @@ const ImagePromptEnhancer = () => {
                 className="flex-1 w-full resize-none rounded-xl bg-black/40 p-4 text-sm leading-relaxed text-neutral-300 placeholder:text-neutral-600 focus:outline-none focus:ring-1 focus:ring-purple-500/50 transition-all border border-transparent focus:border-purple-500/20"
               />
 
-              {/* Footer Button - Fixed at bottom of flex container */}
               <div className="flex-none pt-2">
                 <button
                   onClick={handleInitialAction}
@@ -223,7 +240,6 @@ const ImagePromptEnhancer = () => {
             </motion.div>
           )}
 
-          {/* === STEP 2: QUESTIONS (The Mobile Fix) === */}
           {step === "questions" && (
             <motion.div
               key="questions"
@@ -232,13 +248,11 @@ const ImagePromptEnhancer = () => {
               exit={{ opacity: 0, x: -20 }}
               className="flex flex-col h-full"
             >
-              {/* Title Badge */}
               <div className="flex-none mb-3 rounded-lg bg-purple-500/10 border border-purple-500/20 p-3 text-xs md:text-sm text-purple-200 flex items-center gap-2">
                 <Sparkles size={14} className="shrink-0" />
                 <span>I need a few details to perfect this prompt:</span>
               </div>
 
-              {/* Scrollable Questions Area */}
               <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-4 scrollbar-thin scrollbar-thumb-white/10 pb-4">
                 {generatedQuestions.map((q, idx) => (
                   <div key={idx} className="space-y-1.5">
@@ -253,10 +267,9 @@ const ImagePromptEnhancer = () => {
                     />
                   </div>
                 ))}
-                <div ref={questionsEndRef} /> {/* Scroll anchor */}
+                <div ref={questionsEndRef} />
               </div>
 
-              {/* Action Bar - Always visible */}
               <div className="flex-none flex items-center justify-between pt-4 border-t border-white/5 bg-neutral-900/60 backdrop-blur-md">
                  <button 
                     onClick={() => setStep("input")} 
@@ -276,7 +289,6 @@ const ImagePromptEnhancer = () => {
             </motion.div>
           )}
 
-          {/* === STEP 3: RESULT === */}
           {step === "result" && (
             <motion.div
               key="result"

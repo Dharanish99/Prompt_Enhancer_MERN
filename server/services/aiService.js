@@ -9,7 +9,11 @@ const groq = new OpenAI({
   baseURL: "https://api.groq.com/openai/v1",
 });
 
-// --- 1. THE ANALYST (Generates Questions) ---
+// ============================================================
+//  SECTION 1: MAIN IMAGE ENHANCER LOGIC (The "Home" Page)
+// ============================================================
+
+// --- THE ANALYST (Generates Questions for Raw Prompts) ---
 const ANALYST_PROMPT = `
   You are a Senior Art Director for AI Generation.
   Your goal is to identify AMBIGUITY in a user's raw idea.
@@ -29,67 +33,48 @@ const ANALYST_PROMPT = `
   }
 `;
 
-// --- 2. THE ARCHITECT (The 4 Model Strategies) ---
-// Keys match Frontend: 'midjourney', 'dalle', 'leonardo', 'banana'
+// --- THE ARCHITECT (Generates Final Prompts based on Model) ---
 const ARCHITECT_PROMPTS = {
-  // 1. MIDJOURNEY (Token-heavy, parameters)
   midjourney: `
     You are a Midjourney v6 Prompt Expert.
     Task: SYNTHESIZE the user's raw idea + their answers into a specific Midjourney format.
-    
     RULES:
     - Format: /imagine prompt: [Subject], [Environment], [Artistic Style], [Lighting], [Camera Parameters] --v 6.0
     - Do NOT write natural sentences. Use visual tokens.
     - Example: "Cyberpunk samurai, neon rain, volumetric lighting, shot on 35mm, hyper-realistic --ar 16:9 --v 6.0"
-    - Integrate the user's answers naturally into the token list.
   `,
-
-  // 2. DALL-E 3 (Natural Language, Descriptive)
   dalle: `
     You are a DALL-E 3 Narrative Designer.
     Task: SYNTHESIZE the input into a rich, descriptive paragraph.
-    
     RULES:
-    - DALL-E 3 follows instructions best with natural language.
     - Write a cohesive description (3-4 sentences).
     - Describe the *mood* and *physics* of the light based on the user's answers.
-    - Do not use technical jargon like "8k" or "f/1.8" unless the user specifically asked for a photorealistic camera shot.
   `,
-
-  // 3. LEONARDO.AI (Artistic, Stylized)
   leonardo: `
     You are a Leonardo.ai Prompt Specialist.
     Task: Create a prompt optimized for the "Leonardo Diffusion XL" model.
-    
     RULES:
-    - Leonardo excels at artistic styles (RPG, Oil Painting, 3D Render).
-    - Structure: [Main Subject], [Action], [Context], [Artistic Filters].
     - Use keywords like: "intricate details", "masterpiece", "trending on artstation".
-    - If the user's answers imply a dark mood, add "contrast, dramatic lighting".
+    - Focus on artistic styles (RPG, Oil Painting, 3D Render).
   `,
-
-  // 4. BANANA / STABLE DIFFUSION (Weighting, Keywords)
   banana: `
     You are a Stable Diffusion XL Engineer.
     Task: Create a keyword-heavy prompt using attention weighting syntax.
-    
     RULES:
-    - Use (keyword:weight) syntax for emphasis based on user answers. 
-    - Example: If user answered "Blue lighting", write "(blue neon lighting:1.3)".
-    - Structure: [Positive Prompt] ### [Negative Prompt].
-    - Always generate a Negative Prompt section at the end (e.g., "### Negative: low quality, ugly, deformed, watermark").
+    - Use (keyword:weight) syntax for emphasis. Example: "(blue neon lighting:1.3)".
+    - Format: [Positive Prompt] ### [Negative Prompt].
   `
 };
 
 /**
- * PHASE 1: Analyze prompt and generate questions
+ * 1. Analyze Ambiguity (Home Page - Refine Mode)
  */
 export const analyzePromptAmbiguity = async (userPrompt) => {
   try {
     const completion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: ANALYST_PROMPT },
-        { role: "user", content: `Analyze this prompt for missing details: "${userPrompt}"` },
+        { role: "user", content: `Analyze this prompt: "${userPrompt}"` },
       ],
       model: "llama-3.3-70b-versatile",
       response_format: { type: "json_object" }, 
@@ -99,42 +84,31 @@ export const analyzePromptAmbiguity = async (userPrompt) => {
     return JSON.parse(completion.choices[0]?.message?.content);
   } catch (error) {
     console.error("Analysis Error:", error);
-    // Fallback if LLM fails or returns bad JSON
-    return { questions: ["What art style do you want?", "What is the lighting?", "What is the camera angle?"] };
+    return { questions: ["What is the art style?", "What is the lighting?", "What is the setting?"] };
   }
 };
 
 /**
- * PHASE 2: Synthesize final prompt (The "Pro" Logic)
+ * 2. Synthesize Final Prompt (Home Page - Finalize)
  */
 export const synthesizeFinalPrompt = async (originalPrompt, answers, modelType) => {
-  // 1. Select the correct personality based on frontend key (default to midjourney)
   const strategy = ARCHITECT_PROMPTS[modelType] || ARCHITECT_PROMPTS['midjourney'];
 
-  // 2. Format the user's answers into a clear context block
+  // Format context from Home Page flow
   let clarificationContext = "";
   if (answers) {
-    // Handle both Array (questions flow) and Object (direct input)
     const answersArray = Array.isArray(answers) ? answers : Object.values(answers);
-    
     if (answersArray.length > 0) {
-      clarificationContext = "USER CLARIFICATIONS (Integrate these into the prompt):\n";
+      clarificationContext = "USER CLARIFICATIONS:\n";
       answersArray.forEach((ans, i) => {
-        // Only include if the answer isn't empty
         if (ans && ans.trim() !== "") {
-            clarificationContext += `- Clarification ${i + 1}: ${ans}\n`;
+            clarificationContext += `- ${ans}\n`;
         }
       });
     }
   }
 
-  // 3. The "Synthesis" Request
-  const userMessage = `
-    RAW CONCEPT: "${originalPrompt}"
-    ${clarificationContext}
-    
-    TASK: Rewrite the Raw Concept into a professional prompt for ${modelType}, strictly following your System Rules.
-  `;
+  const userMessage = `RAW CONCEPT: "${originalPrompt}"\n${clarificationContext}\nTASK: Rewrite this into a professional prompt for ${modelType}.`;
 
   try {
     const completion = await groq.chat.completions.create({
@@ -151,5 +125,62 @@ export const synthesizeFinalPrompt = async (originalPrompt, answers, modelType) 
   } catch (error) {
     console.error("Synthesis Error:", error);
     return `Failed to enhance prompt: ${error.message}`;
+  }
+};
+
+
+// ============================================================
+//  SECTION 2: TEMPLATE REMIX LOGIC (The "Templates" Page)
+// ============================================================
+
+// --- THE TEMPLATE FILLER (Optimized) ---
+const TEMPLATE_FILLER_PROMPT = `
+  You are an Expert Prompt Engineer.
+  
+  INPUTS:
+  1. Base Template: A prompt structure containing specific technical parameters and variables.
+  2. Context Pairs: The specific Questions the user was asked, and their Answers.
+  
+  TASK:
+  - Intelligently replace the placeholders or generic terms in the Template with the User's Answers.
+  - Ensure the final prompt is grammatically correct and flows naturally.
+  - STRICTLY PRESERVE all technical tags (e.g. --v 6.0, --ar 16:9, (weight:1.2)).
+  - Output ONLY the final prompt string. Do not add conversational filler.
+`;
+
+/**
+ * 3. Synthesize Template (Templates Page - Remix)
+ * Takes the raw template + the Q&A pairs and merges them.
+ */
+export const synthesizeTemplate = async (templateContent, questions, answers) => {
+  // Format the Q&A for the AI to understand the intent
+  let contextPairs = "";
+  
+  if (questions && answers && questions.length > 0) {
+    questions.forEach((q, i) => {
+      // Only include if the user actually answered
+      const ans = answers[i] || "Default/Unspecified";
+      contextPairs += `Question: "${q}"\nUser Answer: "${ans}"\n---\n`;
+    });
+  }
+
+  try {
+    const completion = await groq.chat.completions.create({
+      messages: [
+        { role: "system", content: TEMPLATE_FILLER_PROMPT },
+        { 
+          role: "user", 
+          content: `Base Template: "${templateContent}"\n\nContext Pairs:\n${contextPairs}` 
+        },
+      ],
+      model: "llama-3.3-70b-versatile",
+      temperature: 0.6, // Slightly lower temp for adherence to template structure
+      max_tokens: 1024,
+    });
+
+    return completion.choices[0]?.message?.content || "Error synthesizing template.";
+  } catch (error) {
+    console.error("Template Synthesis Error:", error);
+    throw new Error("Failed to remix template.");
   }
 };

@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import connectDB from './config/db.js';
 import promptRoutes from './routes/promptRoutes.js';
-
+import templateRoutes from './routes/templateRoutes.js';
 // 1. Initialize Database
 connectDB();
 
@@ -16,7 +16,8 @@ app.use(express.json());
 
 // 3. Mount Routes
 app.use('/api', promptRoutes);
-
+app.use('/api', promptRoutes);
+app.use('/api/templates', templateRoutes);
 // 4. Health Check
 app.get('/', (req, res) => {
   res.send('Server is running...');

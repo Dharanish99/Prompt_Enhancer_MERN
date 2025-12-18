@@ -1,5 +1,5 @@
 import express from 'express';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth } from '../middleware/requireAuth.js';
 import { getTemplates, createTemplate, useTemplate } from '../controllers/templateController.js';
 import { remixTemplate } from '../controllers/templateController.js';
 

@@ -5,96 +5,126 @@ import LoginPage from "./components/LoginPage";
 import ImagePromptEnhancer from "./components/ImagePromptEnhancer";
 import TemplatesGallery from "./components/TemplatesGallery";
 import HistorySidebar from "./components/HistorySidebar";
-import { useAuth } from "@clerk/clerk-react";
+import TextPromptArchitect from "./components/TextPromptArchitect";
+import { AnimatePresence, motion } from "framer-motion";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 
-function App() {
+/* --- GLOBAL TEXTURE COMPONENT --- */
+const GlobalAmbience = () => (
+  <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+    <div className="absolute inset-0 bg-[#050505]" />
+    <div className="absolute inset-0 opacity-[0.03] mix-blend-overlay bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+    <motion.div
+      animate={{ scale: [1, 1.2, 1], opacity: [0.2, 0.4, 0.2] }}
+      transition={{ duration: 12, repeat: Infinity }}
+      className="absolute top-[-20%] left-[-10%] h-[800px] w-[800px] rounded-full bg-blue-900/10 blur-[120px]"
+    />
+    <motion.div
+      animate={{ scale: [1, 1.1, 1], opacity: [0.1, 0.3, 0.1] }}
+      transition={{ duration: 15, repeat: Infinity, delay: 2 }}
+      className="absolute bottom-[-20%] right-[-10%] h-[600px] w-[600px] rounded-full bg-purple-900/10 blur-[120px]"
+    />
+  </div>
+);
+
+const ViewWrapper = ({ children, viewKey }) => (
+  <motion.div
+    key={viewKey}
+    initial={{ opacity: 0, y: 10, scale: 0.99 }}
+    animate={{ opacity: 1, y: 0, scale: 1 }}
+    exit={{ opacity: 0, y: -10, scale: 0.99 }}
+    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+    className="relative w-full h-full"
+  >
+    {children}
+  </motion.div>
+);
+
+const AppContent = () => {
+  const { user, loading } = useAuth();
   const [currentView, setCurrentView] = useState("home");
-  const { isSignedIn, isLoaded } = useAuth();
-  
-  // --- STATE LIFTING: The "Remix" Payload ---
-  // We hold the data here to pass it between siblings (Gallery -> Enhancer)
   const [activePrompt, setActivePrompt] = useState("");
   const [activeModel, setActiveModel] = useState("midjourney");
-  
-  // Sidebar State
+  const [isNavbarHidden, setIsNavbarHidden] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
-  // --- LOGIC: REMIX HANDLER ---
-  // This function is called by TemplatesGallery when a remix is done
-  const handleRemixComplete = (blendedPrompt, model) => {
-    // 1. Update the "Active" state with the new AI-generated prompt
-    setActivePrompt(blendedPrompt);
+  const handleRemixComplete = (prompt, model) => {
+    setActivePrompt(prompt);
     setActiveModel(model || "midjourney");
-    
-    // 2. Force switch to the Image Enhancer view
-    // setCurrentView("image");
+    setCurrentView("image");
   };
 
-  if (!isLoaded) return <div className="min-h-screen bg-black flex items-center justify-center text-white">Loading...</div>;
-  if (!isSignedIn) return <LoginPage />;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#050505] flex items-center justify-center text-neutral-500 font-mono text-xs">
+        INITIALIZING STUDIO…
+      </div>
+    );
+  }
 
-  const renderView = () => {
-    switch (currentView) {
-      case "home":
-        return <HomePage onNavigate={setCurrentView} />;
-        
-      case "image":
-        return (
-          <div className="pt-24 px-4 md:px-6 max-w-7xl mx-auto h-[calc(100vh-100px)]">
-             {/* TASK 1 COMPLETE: 
-                We pass the lifted state down as "initial" props.
-                The Enhancer will listen to these for changes.
-             */}
-             <ImagePromptEnhancer 
-               initialPrompt={activePrompt}
-               initialModel={activeModel}
-             />
-          </div>
-        );
-        
-      case "chat":
-        return (
-          <div className="pt-32 text-center text-white">
-            <h1 className="text-2xl">Text Enhancer (Component Coming Next)</h1>
-          </div>
-        );
-        
-      case "templates":
-        return (
-          <div className="pt-0">
-             {/* Pass the Handler Down */}
-             <TemplatesGallery onRemixComplete={handleRemixComplete} />
-          </div>
-        );
-        
-      default:
-        return <HomePage onNavigate={setCurrentView} />;
-    }
-  };
+  if (!user) return <LoginPage />;
 
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-blue-500/30">
-      {/* Global Ambience */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 h-96 w-96 rounded-full bg-blue-900/10 blur-[120px]" />
-        <div className="absolute bottom-0 right-1/4 h-96 w-96 rounded-full bg-purple-900/10 blur-[120px]" />
+    <div className="relative min-h-screen text-white overflow-x-hidden">
+      <GlobalAmbience />
+
+      <div className={`relative z-50 transition-all ${isNavbarHidden ? "-translate-y-32 opacity-0" : ""}`}>
+        <Navbar
+          activeTab={currentView}
+          onNavigate={setCurrentView}
+          onOpenHistory={() => setIsHistoryOpen(true)}
+        />
       </div>
 
-      <Navbar 
-        activeTab={currentView} 
-        onNavigate={setCurrentView} 
-        onOpenHistory={() => setIsHistoryOpen(true)} 
-      />
-      
       <main className="relative z-10">
-        {renderView()}
+        <AnimatePresence mode="wait">
+          {currentView === "home" && (
+            <ViewWrapper viewKey="home">
+              <HomePage onNavigate={setCurrentView} />
+            </ViewWrapper>
+          )}
+
+          {currentView === "image" && (
+            <ViewWrapper viewKey="image">
+              <div className="pt-24 max-w-7xl mx-auto">
+                <ImagePromptEnhancer
+                  initialPrompt={activePrompt}
+                  initialModel={activeModel}
+                />
+              </div>
+            </ViewWrapper>
+          )}
+
+          {currentView === "chat" && (
+            <ViewWrapper viewKey="chat">
+              <TextPromptArchitect />
+            </ViewWrapper>
+          )}
+
+          {currentView === "templates" && (
+            <ViewWrapper viewKey="templates">
+              <TemplatesGallery
+                onRemixComplete={handleRemixComplete}
+                setNavbarHidden={setIsNavbarHidden}
+              />
+            </ViewWrapper>
+          )}
+        </AnimatePresence>
       </main>
 
-      <HistorySidebar 
-        isOpen={isHistoryOpen} 
-        onClose={() => setIsHistoryOpen(false)} 
+      <HistorySidebar
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
       />
     </div>
+  );
+};
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 

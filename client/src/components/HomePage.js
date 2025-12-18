@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { 
   ArrowRight, Sparkles, Image as ImageIcon, 
-  Terminal, MousePointer2, Keyboard, Zap, 
+  MousePointer2, Keyboard, Zap, 
   Github, Linkedin, Mail, CheckCircle2
 } from "lucide-react";
 
@@ -46,21 +46,27 @@ const HomePage = ({ onNavigate }) => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="max-w-4xl"
+          className="max-w-5xl"
         >
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-blue-400 backdrop-blur-sm">
+          <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-blue-400 backdrop-blur-sm">
             <Sparkles size={12} className="animate-pulse" />
             <span>v2.0 Neural Engine Live</span>
           </div>
 
-          <h1 className="text-5xl font-bold tracking-tight md:text-7xl lg:text-8xl">
-            Enhance Your AI Prompts <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">
-              With One Click.
+          {/* --- NEW ELITE HEADLINE --- */}
+          <h1 className="flex flex-col items-center gap-2 font-bold tracking-tight">
+            {/* Top Text */}
+            <span className="text-4xl md:text-5xl text-neutral-400 font-medium tracking-tight">
+              Welcome to
+            </span>
+            
+            {/* ELITE GRADIENT TEXT */}
+            <span className="text-6xl md:text-8xl lg:text-9xl text-transparent bg-clip-text bg-gradient-to-b from-white via-white to-neutral-500 drop-shadow-2xl">
+              Prompt Studio X
             </span>
           </h1>
 
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-neutral-400 leading-relaxed">
+          <p className="mx-auto mt-8 max-w-2xl text-lg text-neutral-400 leading-relaxed">
             Unlock clearer, more effective prompts for ChatGPT, DALL·E, Midjourney, and more. Stop guessing and start engineering.
           </p>
 

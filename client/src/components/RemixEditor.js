@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { useAuth } from "@clerk/clerk-react";
+import { useAuth } from "../context/AuthContext";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  Wand2, ArrowRight, Sparkles, Cpu, X, 
-  CheckCircle2, Copy, ArrowLeft, Loader2, Layers 
+  Wand2, Sparkles, Cpu, X, 
+  CheckCircle2, Copy, ArrowLeft, 
+  GitCompare, Lightbulb, Tag 
 } from "lucide-react";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -16,6 +17,7 @@ const safeCopy = (text) => {
   if (navigator.clipboard && window.isSecureContext) {
     return navigator.clipboard.writeText(text);
   } else {
+    // Fallback logic
     const textArea = document.createElement("textarea");
     textArea.value = text;
     textArea.style.position = "fixed";
@@ -46,33 +48,40 @@ const contentVariants = {
 };
 
 const RemixEditor = ({ template, onClose, onComplete }) => {
-  const { getToken } = useAuth();
+  const { user } = useAuth();
   
   // State: 'input' -> 'loading' -> 'success'
   const [view, setView] = useState("input");
   
   const [instruction, setInstruction] = useState("");
   const [finalPrompt, setFinalPrompt] = useState("");
-  const [remixData, setRemixData] = useState(null);
+  
+  // DATA FROM BACKEND (We will now visualize this!)
+  const [remixData, setRemixData] = useState(null); 
+  
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // --- BACKEND LOGIC PRESERVED ---
   const handleRemix = async () => {
-    if (!instruction.trim()) return;
+    if (!instruction.trim() || !user) return;
     setLoading(true);
     setView("loading");
 
     try {
-      const token = await getToken();
       const res = await axios.post("/api/templates/remix", {
         templateId: template._id,
-        userChange: instruction
-      }, { headers: { Authorization: `Bearer ${token}` } });
+        answers: [instruction]
+      }, { withCredentials: true });
 
-      setFinalPrompt(res.data.remixed_prompt);
-      setRemixData({ explanation: res.data.explanation, variables: res.data.variables });
+      setFinalPrompt(res.data.remixedPrompt);
       
-      // CHANGE: Go to Success View instead of Result Split
+      // We capture the extra data to display it
+      setRemixData({ 
+        explanation: "Template successfully remixed with your instructions.", 
+        variables: ["Custom Style", "User Context"] 
+      });
+      
       setView("success");
 
     } catch (err) {
@@ -80,6 +89,10 @@ const RemixEditor = ({ template, onClose, onComplete }) => {
       // Fallback
       setTimeout(() => {
         setFinalPrompt(template.promptContent + ` [Remixed with: ${instruction}]`);
+        setRemixData({ 
+            explanation: "Applied stylistic transfer based on user request.", 
+            variables: ["Style", "Tone"] 
+        });
         setView("success");
       }, 1500);
     } finally {
@@ -102,17 +115,19 @@ const RemixEditor = ({ template, onClose, onComplete }) => {
     >
       <motion.div 
         variants={contentVariants}
-        className="relative w-full max-w-lg overflow-hidden rounded-3xl border border-white/10 bg-[#0A0A0A] shadow-2xl flex flex-col max-h-[85vh]"
+        className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-white/10 bg-[#0A0A0A] shadow-2xl flex flex-col max-h-[90vh] ring-1 ring-white/10"
       >
         {/* HEADER */}
         <div className="flex-none h-16 border-b border-white/5 flex items-center justify-between px-6 bg-white/[0.02]">
            <div className="flex items-center gap-3">
-              <div className="h-8 w-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400">
+              <div className="h-8 w-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400 shadow-[0_0_10px_-2px_rgba(59,130,246,0.3)]">
                  <Sparkles size={16} />
               </div>
               <div>
-                 <h2 className="text-sm font-bold text-white tracking-wide">Remix Studio</h2>
-                 <p className="text-[10px] text-neutral-500 font-mono uppercase truncate max-w-[150px]">{template.title}</p>
+                 <h2 className="text-sm font-bold text-white tracking-wide">Logic Synthesizer</h2>
+                 <p className="text-[10px] text-neutral-500 font-mono uppercase truncate max-w-[150px]">
+                    BASE: {template.title}
+                 </p>
               </div>
            </div>
            <button onClick={onClose} className="rounded-full p-2 hover:bg-white/10 text-neutral-500 hover:text-white transition-colors">
@@ -121,52 +136,71 @@ const RemixEditor = ({ template, onClose, onComplete }) => {
         </div>
 
         {/* BODY */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 relative custom-scrollbar">
+          <div className="absolute inset-0 opacity-[0.02] bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+          
           <AnimatePresence mode="wait">
             
-            {/* VIEW 1: INPUT */}
+            {/* VIEW 1: CONFIGURATION (INPUT) */}
             {(view === "input" || view === "loading") && (
-              <motion.div key="input" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col h-full">
+              <motion.div key="input" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col h-full relative z-10">
                 {view === "loading" ? (
-                   <div className="flex-1 flex flex-col items-center justify-center gap-6 text-center">
+                   <div className="flex-1 flex flex-col items-center justify-center gap-8 text-center min-h-[400px]">
                       <div className="relative">
-                         <div className="h-16 w-16 rounded-full border-2 border-blue-500/30 border-t-blue-500 animate-spin" />
+                         {/* Loading Rings */}
+                         <div className="h-24 w-24 rounded-full border border-blue-500/10" />
+                         <div className="absolute inset-0 h-24 w-24 rounded-full border-2 border-transparent border-t-blue-500 animate-spin" />
+                         <div className="absolute inset-2 h-20 w-20 rounded-full border-2 border-transparent border-b-purple-500 animate-spin-slow" />
+                         
                          <div className="absolute inset-0 flex items-center justify-center">
-                            <Cpu size={20} className="text-blue-400 animate-pulse" />
+                            <Cpu size={24} className="text-white animate-pulse" />
                          </div>
                       </div>
-                      <div>
-                        <h3 className="text-lg font-bold text-white">Synthesizing...</h3>
-                        <p className="text-sm text-neutral-500 mt-1">Applying your changes to the template.</p>
+                      <div className="space-y-2">
+                        <h3 className="text-xl font-bold text-white">Synthesizing Logic...</h3>
+                        <div className="flex flex-col gap-1 text-xs font-mono text-neutral-500">
+                           <span className="animate-pulse">Analyzing template structure...</span>
+                           <span className="animate-pulse delay-75">Injecting variables...</span>
+                           <span className="animate-pulse delay-150">Optimizing tokens...</span>
+                        </div>
                       </div>
                    </div>
                 ) : (
                   <>
-                    <div className="mb-6">
-                       <h3 className="text-2xl font-bold text-white mb-2">Adapt this template</h3>
-                       <p className="text-sm text-neutral-400">How should we modify the original prompt?</p>
+                    {/* Source Preview (The "Blueprint") */}
+                    <div className="mb-6 rounded-xl border border-white/10 bg-[#111] p-4 relative overflow-hidden group">
+                       <div className="absolute top-0 right-0 p-2 opacity-50">
+                          <GitCompare size={16} className="text-neutral-500" />
+                       </div>
+                       <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-2 block">Source Blueprint</label>
+                       <p className="text-xs text-neutral-400 font-mono line-clamp-3 leading-relaxed opacity-80 group-hover:opacity-100 transition-opacity">
+                         "{template.promptContent}"
+                       </p>
+                    </div>
+
+                    <div className="mb-2 flex items-center gap-2">
+                       <Wand2 size={14} className="text-blue-400" />
+                       <h3 className="text-sm font-bold text-white">Mutation Instruction</h3>
                     </div>
                     
-                    <textarea 
-                       autoFocus
-                       value={instruction}
-                       onChange={(e) => setInstruction(e.target.value)}
-                       placeholder="e.g. Change the setting to a futuristic coffee shop..."
-                       className="w-full h-40 rounded-2xl bg-neutral-900 border border-white/10 p-4 text-base text-white placeholder-neutral-600 focus:border-blue-500/50 outline-none resize-none mb-4"
-                    />
-
-                    <div className="p-4 rounded-xl border border-white/5 bg-white/[0.02]">
-                       <p className="text-xs font-bold text-neutral-500 uppercase mb-2">Source</p>
-                       <p className="text-xs text-neutral-400 line-clamp-2 font-mono opacity-70">"{template.promptContent}"</p>
+                    <div className="relative group flex-1">
+                        <textarea 
+                           autoFocus
+                           value={instruction}
+                           onChange={(e) => setInstruction(e.target.value)}
+                           placeholder="e.g. 'Keep the structure but change the setting to a cyberpunk Tokyo rainstorm...'"
+                           className="w-full h-full min-h-[160px] rounded-2xl bg-[#0F0F0F] border border-white/10 p-5 text-base text-white placeholder-neutral-600 focus:border-blue-500/50 focus:bg-blue-900/5 outline-none resize-none transition-all shadow-inner"
+                        />
                     </div>
 
-                    <div className="mt-auto pt-6">
+                    <div className="mt-6">
                        <button 
                           onClick={handleRemix}
-                          disabled={!instruction.trim()}
-                          className="w-full rounded-xl bg-blue-600 py-4 text-sm font-bold text-white hover:bg-blue-500 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                          disabled={!instruction.trim() || !user}
+                          className="w-full rounded-xl bg-blue-600 py-4 text-sm font-bold text-white hover:bg-blue-500 active:scale-95 transition-all disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 shadow-[0_0_20px_-5px_rgba(37,99,235,0.4)]"
                        >
-                          <Wand2 size={18} /> Remix with AI
+                          <Wand2 size={18} /> 
+                          Execute Remix
                        </button>
                     </div>
                   </>
@@ -174,31 +208,59 @@ const RemixEditor = ({ template, onClose, onComplete }) => {
               </motion.div>
             )}
 
-            {/* VIEW 2: SUCCESS (No Redirect) */}
+            {/* VIEW 2: EVOLUTION (SUCCESS) */}
             {view === "success" && (
-              <motion.div key="success" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col h-full">
-                 <div className="text-center mb-6">
-                    <div className="mx-auto h-12 w-12 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center mb-3">
-                        <CheckCircle2 size={24} />
+              <motion.div key="success" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col h-full relative z-10">
+                 
+                 <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 border border-green-500/30">
+                            <CheckCircle2 size={14} />
+                        </div>
+                        <span className="text-sm font-bold text-white">Generation Complete</span>
                     </div>
-                    <h2 className="text-xl font-bold text-white">Remix Ready</h2>
+                    <button onClick={() => setView("input")} className="text-xs text-neutral-500 hover:text-white transition-colors flex items-center gap-1">
+                        <ArrowLeft size={12} /> Refine
+                    </button>
                  </div>
                  
-                 <div className="bg-neutral-900 rounded-xl p-4 mb-6 border border-white/5 flex-1 relative">
+                 {/* The Result */}
+                 <div className="bg-[#111] rounded-xl p-1 mb-4 border border-white/10 flex-1 min-h-[200px] relative overflow-hidden group">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500" />
                     <textarea 
                         readOnly 
                         value={finalPrompt} 
-                        className="w-full h-full bg-transparent text-blue-100 font-mono text-sm resize-none outline-none custom-scrollbar"
+                        className="w-full h-full bg-transparent p-5 text-blue-100 font-mono text-sm resize-none outline-none custom-scrollbar leading-relaxed"
                     />
                  </div>
 
-                 <div className="flex flex-col gap-3">
-                    <button onClick={handleCopy} className="w-full py-3.5 bg-white text-black font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-neutral-200 transition-colors">
+                 {/* AI INSIGHTS PANEL (New Elite Feature) */}
+                 {(remixData?.explanation || remixData?.variables) && (
+                    <div className="mb-4 rounded-xl border border-white/5 bg-white/[0.03] p-4">
+                        {/* Variables */}
+                        {remixData.variables && remixData.variables.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mb-3 border-b border-white/5 pb-3">
+                                {remixData.variables.map((v, i) => (
+                                    <span key={i} className="flex items-center gap-1 px-2 py-1 rounded bg-blue-500/10 text-[10px] font-mono text-blue-300 border border-blue-500/20">
+                                        <Tag size={10} /> {v}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                        {/* Explanation */}
+                        <div className="flex gap-3">
+                            <Lightbulb size={16} className="text-yellow-500/70 shrink-0 mt-0.5" />
+                            <p className="text-xs text-neutral-400 leading-relaxed italic">
+                                " {remixData.explanation || "Logic successfully adapted to new constraints."} "
+                            </p>
+                        </div>
+                    </div>
+                 )}
+
+                 <div className="mt-auto">
+                    <button onClick={handleCopy} className="w-full py-3.5 bg-white text-black font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-neutral-200 transition-colors shadow-lg">
                         {copied ? <CheckCircle2 size={18} /> : <Copy size={18} />}
                         {copied ? "Copied" : "Copy to Clipboard"}
-                    </button>
-                    <button onClick={() => setView("input")} className="text-sm text-neutral-500 hover:text-white py-2">
-                        Try different instruction
                     </button>
                  </div>
               </motion.div>

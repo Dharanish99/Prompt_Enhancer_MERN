@@ -1,90 +1,117 @@
 import Template from '../models/Template.js';
-import {synthesizeTemplate } from '../services/aiService.js';
+import { synthesizeTemplate } from '../services/aiService.js';
 
-
-// 1. GET QUESTIONS (Instant - No AI Cost)
+// =====================================================
+// 1. INIT REMIX (NO AI COST)
+// =====================================================
 export const initRemix = async (req, res) => {
   const { templateId } = req.body;
+
   try {
     const template = await Template.findById(templateId);
     if (!template) return res.status(404).json({ error: "Not found" });
 
-    // FAST: Just return the array from the DB
-    res.json({ 
+    res.json({
       templateId: template._id,
       originalPrompt: template.promptContent,
-      questions: template.questions // <--- This comes from DB now
+      questions: template.questions
     });
   } catch (error) {
-    res.status(500).json({ error: "Failed to initialize" });
+    console.error(error);
+    res.status(500).json({ error: "Failed to initialize remix" });
   }
 };
 
-// 2. GENERATE PROMPT (Costs 1 API Call)
+// =====================================================
+// 2. CREATE REMIX (NEW FLOW)
+// =====================================================
 export const createRemix = async (req, res) => {
-  const { templateId, answers } = req.body; // answers is an array: ["Man", "Blue Suit"]
-  
+  const { templateId, answers } = req.body;
+
   try {
     const template = await Template.findById(templateId);
-    
-    // The "Synthesizer" blends the template + the array of answers
-    const finalPrompt = await synthesizeTemplate(template.promptContent, template.questions, answers);
-    
-    // Track usage
+    if (!template) return res.status(404).json({ error: "Not found" });
+
+    const finalPrompt = await synthesizeTemplate(
+      template.promptContent,
+      template.questions,
+      answers,
+      template.protectedTokens || []
+    );
+
     template.usageCount += 1;
     await template.save();
 
     res.json({ remixedPrompt: finalPrompt });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: "Failed to generate prompt" });
+    res.status(500).json({ error: "Failed to generate remix" });
   }
 };
 
-// ... keep getTemplates and other functions
-// @desc    Get All Templates (with Search & Filter)
-// @route   GET /api/templates
+// =====================================================
+// 3. BACKWARD-COMPATIBLE REMIX (OLD ROUTE SUPPORT)
+// =====================================================
+// This keeps `/api/templates/remix` working
+export const remixTemplate = async (req, res) => {
+  const { templateId, answers } = req.body;
+
+  try {
+    const template = await Template.findById(templateId);
+    if (!template) return res.status(404).json({ error: "Template not found" });
+
+    const finalPrompt = await synthesizeTemplate(
+      template.promptContent,
+      template.questions,
+      answers || [],
+      template.protectedTokens || []
+    );
+
+    template.usageCount += 1;
+    await template.save();
+
+    res.status(200).json({
+      remixedPrompt: finalPrompt
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Remix failed" });
+  }
+};
+
+// =====================================================
+// 4. GET TEMPLATES
+// =====================================================
 export const getTemplates = async (req, res) => {
   try {
     const { category, search, sort } = req.query;
-    
-    // 1. Build Query
+
     let query = {};
-    
-    // Filter by Category (Multiverse logic)
-    if (category && category !== 'all') {
-      query.category = category;
-    }
+    if (category && category !== 'all') query.category = category;
+    if (search) query.$text = { $search: search };
 
-    // Search Logic (Title, Tags, Description)
-    if (search) {
-      query.$text = { $search: search };
-    }
-
-    // 2. Build Sort
-    let sortOption = { createdAt: -1 }; // Default: Newest
-    if (sort === 'popular') sortOption = { likes: -1 };
+    let sortOption = { createdAt: -1 };
+    if (sort === 'popular') sortOption = { usageCount: -1 };
     if (sort === 'oldest') sortOption = { createdAt: 1 };
 
-    // 3. Execute
     const templates = await Template.find(query)
       .sort(sortOption)
-      .limit(50); // Pagination limit
+      .limit(50);
 
     res.status(200).json(templates);
   } catch (error) {
-    console.error("Template Fetch Error:", error);
+    console.error(error);
     res.status(500).json({ error: "Failed to fetch templates" });
   }
 };
 
-// @desc    Publish a New Template
-// @route   POST /api/templates
+// =====================================================
+// 5. CREATE TEMPLATE
+// =====================================================
 export const createTemplate = async (req, res) => {
   try {
-    // Determine Author (System or User)
-    const authorId = req.auth ? req.auth.userId : "system";
-    
+    const authorId = req.user ? req.user._id : "system";
+
     const newTemplate = await Template.create({
       ...req.body,
       authorId
@@ -96,38 +123,19 @@ export const createTemplate = async (req, res) => {
   }
 };
 
-// @desc    Increment Usage Count (When someone 'Remixes')
-// @route   POST /api/templates/:id/use
+// =====================================================
+// 6. TRACK USAGE
+// =====================================================
 export const useTemplate = async (req, res) => {
   try {
     const template = await Template.findByIdAndUpdate(
-      req.params.id, 
+      req.params.id,
       { $inc: { usageCount: 1 } },
       { new: true }
     );
+
     res.status(200).json(template);
   } catch (error) {
     res.status(500).json({ error: "Update failed" });
-  }
-};
-
-export const remixTemplate = async (req, res) => {
-  const { templateId, userChange } = req.body;
-  
-  try {
-    const template = await Template.findById(templateId);
-    if (!template) return res.status(404).json({ error: "Template not found" });
-
-    // Call the Smart Remixer
-    const result = await remixSmartTemplate(template.promptContent, userChange);
-
-    // Track usage
-    template.usageCount += 1;
-    await template.save();
-
-    // Return the full JSON object (prompt + variables + explanation)
-    res.status(200).json(result);
-  } catch (error) {
-    res.status(500).json({ error: "Remix failed" });
   }
 };

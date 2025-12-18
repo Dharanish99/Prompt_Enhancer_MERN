@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
-import { useAuth } from "@clerk/clerk-react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  X, Copy, Check, Clock, Loader2, ChevronLeft, 
+import {
+  X, Copy, Check, Clock, Loader2, ChevronLeft,
   Terminal, Sparkles, Calendar, ArrowRight, Trash2
 } from "lucide-react";
 import { clsx } from "clsx";
@@ -61,7 +60,6 @@ const itemVariants = {
 
 // --- MAIN COMPONENT ---
 const HistorySidebar = ({ isOpen, onClose }) => {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null); // The "Popup" State
@@ -69,15 +67,14 @@ const HistorySidebar = ({ isOpen, onClose }) => {
 
   // Fetch Logic
   useEffect(() => {
-    if (isOpen && isLoaded && isSignedIn) fetchHistory();
+    if (isOpen) fetchHistory();
   }, [isOpen]);
 
   const fetchHistory = async () => {
     setLoading(true);
     try {
-      const token = await getToken();
       const res = await axios.get("/api/history", {
-        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true,
       });
       setHistory(res.data);
     } catch (err) {
@@ -114,12 +111,12 @@ const HistorySidebar = ({ isOpen, onClose }) => {
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
             className="fixed right-0 top-0 z-[70] h-full w-full max-w-md border-l border-white/10 bg-[#0A0A0A] shadow-2xl md:w-[480px]"
           >
-            
+
             {/* --- NAVIGATION HEADER --- */}
             <div className="flex h-16 items-center justify-between border-b border-white/5 px-6 bg-white/[0.02]">
               <div className="flex items-center gap-3">
                 {selectedItem ? (
-                  <button 
+                  <button
                     onClick={() => setSelectedItem(null)}
                     className="group flex items-center gap-1 text-sm text-neutral-400 hover:text-white transition-colors"
                   >
@@ -135,8 +132,8 @@ const HistorySidebar = ({ isOpen, onClose }) => {
                   </div>
                 )}
               </div>
-              
-              <button 
+
+              <button
                 onClick={onClose}
                 className="rounded-full p-2 text-neutral-500 hover:bg-white/5 hover:text-white transition-colors"
               >
@@ -147,7 +144,7 @@ const HistorySidebar = ({ isOpen, onClose }) => {
             {/* --- CONTENT AREA (Switch between List & Detail) --- */}
             <div className="relative h-[calc(100vh-64px)] overflow-hidden">
               <AnimatePresence mode="popLayout" initial={false}>
-                
+
                 {/* VIEW 1: THE LIST */}
                 {!selectedItem ? (
                   <motion.div
@@ -168,7 +165,7 @@ const HistorySidebar = ({ isOpen, onClose }) => {
                         <p className="text-neutral-400">No prompts generated yet.</p>
                       </div>
                     ) : (
-                      <motion.div 
+                      <motion.div
                         variants={containerVariants}
                         initial="hidden"
                         animate="show"
@@ -187,14 +184,14 @@ const HistorySidebar = ({ isOpen, onClose }) => {
                                 {new Date(item.createdAt).toLocaleDateString()}
                               </span>
                             </div>
-                            
+
                             <h3 className="mb-1 text-sm font-medium text-neutral-300 line-clamp-1 group-hover:text-white transition-colors">
                               {item.originalPrompt}
                             </h3>
                             <p className="text-xs text-neutral-500 line-clamp-2 leading-relaxed">
                               {item.enhancedPrompt}
                             </p>
-                            
+
                             <div className="mt-3 flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
                               <span className="text-[10px] text-blue-400 font-medium flex items-center gap-1">
                                 View Details <ArrowRight size={10} />
@@ -206,7 +203,7 @@ const HistorySidebar = ({ isOpen, onClose }) => {
                     )}
                   </motion.div>
                 ) : (
-                  
+
                   /* VIEW 2: THE DETAIL POPUP (INSPECTOR) */
                   <motion.div
                     key="detail"
@@ -216,14 +213,14 @@ const HistorySidebar = ({ isOpen, onClose }) => {
                     className="flex h-full flex-col"
                   >
                     <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-white/10">
-                      
+
                       {/* Meta Info */}
                       <div className="mb-6 flex items-center justify-between">
-                         <ModelBadge model={selectedItem.modelUsed} />
-                         <div className="flex items-center gap-2 text-xs text-neutral-500">
-                           <Calendar size={12} />
-                           {new Date(selectedItem.createdAt).toLocaleString()}
-                         </div>
+                        <ModelBadge model={selectedItem.modelUsed} />
+                        <div className="flex items-center gap-2 text-xs text-neutral-500">
+                          <Calendar size={12} />
+                          {new Date(selectedItem.createdAt).toLocaleString()}
+                        </div>
                       </div>
 
                       {/* Original Input Section */}
@@ -244,13 +241,13 @@ const HistorySidebar = ({ isOpen, onClose }) => {
                           </h3>
                           <Sparkles size={12} className="text-blue-400 animate-pulse" />
                         </div>
-                        
+
                         <div className="relative overflow-hidden rounded-xl border border-blue-500/20 bg-blue-500/5 p-5">
                           {/* Code-like display */}
                           <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-blue-100/90">
                             {selectedItem.enhancedPrompt}
                           </pre>
-                          
+
                           {/* Corner Glow */}
                           <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
                         </div>
@@ -262,7 +259,7 @@ const HistorySidebar = ({ isOpen, onClose }) => {
                     <div className="border-t border-white/10 bg-black/40 p-6 backdrop-blur-md">
                       <div className="flex gap-3">
                         <div className="flex-1">
-                          <ActionButton 
+                          <ActionButton
                             icon={copiedId === "full" ? Check : Copy}
                             label={copiedId === "full" ? "Copied to Clipboard" : "Copy Enhanced Prompt"}
                             active={copiedId === "full"}
@@ -279,7 +276,7 @@ const HistorySidebar = ({ isOpen, onClose }) => {
                 )}
               </AnimatePresence>
             </div>
-            
+
           </motion.div>
         </>
       )}

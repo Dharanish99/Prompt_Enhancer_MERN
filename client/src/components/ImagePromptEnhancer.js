@@ -1,30 +1,34 @@
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
+import { useAuth } from "../context/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   ImageIcon, Sparkles, Loader2, ArrowRight, 
-  MessageCircleQuestion, CheckCircle2, RefreshCcw, Copy, Check 
+  MessageCircle, Terminal, RefreshCcw, Copy, Check, Zap,
+  Cpu, Layers
 } from "lucide-react";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
-// --- UTILS ---
 function cn(...inputs) { return twMerge(clsx(inputs)); }
 
-const GlassCard = ({ children, className }) => (
+// --- COMPONENTS ---
+const GlassPanel = ({ children, className }) => (
   <motion.div
-    initial={{ opacity: 0, scale: 0.95 }}
+    initial={{ opacity: 0, scale: 0.98 }}
     animate={{ opacity: 1, scale: 1 }}
-    transition={{ duration: 0.5 }}
+    transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
     className={cn(
-      "relative flex flex-col overflow-hidden rounded-3xl border border-white/10 bg-neutral-900/60 backdrop-blur-xl transition-all",
-      "p-4 md:p-6", 
-      "h-auto md:h-full", 
+      "relative flex flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0A0A0A] shadow-2xl group",
       className
     )}
   >
-    <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-purple-500/5 blur-3xl pointer-events-none" />
-    <div className="relative z-10 flex flex-1 flex-col overflow-hidden">{children}</div>
+    {/* Ambient Noise Texture */}
+    <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+    {/* Top Glow */}
+    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-1 bg-gradient-to-r from-transparent via-white/10 to-transparent blur-sm" />
+    
+    <div className="relative z-10 flex flex-1 flex-col overflow-hidden h-full">{children}</div>
   </motion.div>
 );
 
@@ -37,53 +41,36 @@ const CopyButton = ({ text }) => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      // Fallback for older browsers or non-HTTPS contexts
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
   };
   return (
-    <button onClick={handleCopy} className="absolute right-2 top-2 rounded-lg bg-white/5 p-2 text-neutral-400 hover:bg-white/10 hover:text-white transition-colors">
-      {copied ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
+    <button 
+      onClick={handleCopy} 
+      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white transition-colors border border-white/5"
+    >
+      {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
     </button>
   );
 };
 
-const RefineToggle = ({ enabled, setEnabled }) => (
-  <div 
-    onClick={() => setEnabled(!enabled)}
-    className="flex cursor-pointer items-center gap-2 rounded-full border border-white/5 bg-black/40 px-3 py-1.5 transition-colors hover:bg-black/60"
-  >
-    <span className={cn("text-[10px] md:text-xs font-medium transition-colors", enabled ? "text-white" : "text-neutral-500")}>
-      Refine
-    </span>
-    <div className={cn("relative h-4 w-7 md:h-5 md:w-9 rounded-full transition-colors duration-300", enabled ? "bg-purple-500" : "bg-neutral-700")}>
-      <motion.div 
-        className="absolute top-0.5 md:top-1 h-3 w-3 rounded-full bg-white shadow-sm"
-        animate={{ x: enabled ? (window.innerWidth < 768 ? 14 : 18) : (window.innerWidth < 768 ? 2 : 4) }}
-        transition={{ type: "spring", stiffness: 500, damping: 30 }}
-      />
-    </div>
-  </div>
-);
+const MODELS = [
+  { id: 'midjourney', label: 'Midjourney V6' },
+  { id: 'dalle', label: 'DALL-E 3' },
+  { id: 'leonardo', label: 'Leonardo.Ai' },
+  { id: 'nano-banana', label: 'Nano Banana' },
+  { id: 'stable-diffusion', label: 'Stable Diffusion' }
+];
 
-// --- MAIN COMPONENT ---
-// TASK 2: Accept initial props
 const ImagePromptEnhancer = ({ initialPrompt = "", initialModel = "midjourney" }) => {
+  const { user } = useAuth();
   const [step, setStep] = useState("input"); 
   
-  // Local State (for fast typing performance)
   const [imagePrompt, setImagePrompt] = useState(initialPrompt);
   const [imageModel, setImageModel] = useState(initialModel);
   const [isRefineMode, setIsRefineMode] = useState(false);
   
-  // API State
   const [generatedQuestions, setGeneratedQuestions] = useState([]);
   const [userAnswers, setUserAnswers] = useState({});
   const [finalResult, setFinalResult] = useState("");
@@ -91,24 +78,19 @@ const ImagePromptEnhancer = ({ initialPrompt = "", initialModel = "midjourney" }
   const [loading, setLoading] = useState(false);
   const questionsEndRef = useRef(null);
 
-  // TASK 2 COMPLETE: Sync with Parent (The Remix Logic)
-  // Whenever App.js passes a new "Remix", we update our local state instantly.
   useEffect(() => {
     if (initialPrompt) {
       setImagePrompt(initialPrompt);
-      setStep("input"); // Reset UI to input view to show the new text
+      setStep("input");
     }
-    if (initialModel) {
-      setImageModel(initialModel);
-    }
+    if (initialModel) setImageModel(initialModel);
   }, [initialPrompt, initialModel]);
 
-  // Auto-scroll
   useEffect(() => {
     if (step === 'questions' && questionsEndRef.current) {
         questionsEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [step]);
+  }, [step, generatedQuestions]);
 
   const handleInitialAction = async () => {
     if (!imagePrompt.trim()) return;
@@ -116,29 +98,26 @@ const ImagePromptEnhancer = ({ initialPrompt = "", initialModel = "midjourney" }
 
     try {
       if (isRefineMode) {
-        // Mocking Refine logic (replace with real API later)
-        setTimeout(() => {
-          setGeneratedQuestions([
-            "What is the artistic style? (e.g., Cyberpunk, Oil Painting)",
-            "What is the lighting mood? (e.g., Cinematic, Neon)",
-            "Any specific camera angle? (e.g., Wide shot, Macro)"
-          ]);
-          setStep("questions");
-          setLoading(false);
-        }, 1500);
+        const res = await axios.post("/api/image-enhance/analyze-prompt", { 
+          prompt: imagePrompt 
+        }, { withCredentials: true });
+
+        const questions = res.data.questions || ["What style?", "What lighting?", "What mood?"];
+        setGeneratedQuestions(questions);
+        setStep("questions");
 
       } else {
-        // Direct Enhance
-        const res = await axios.post("/api/image-enhance", { 
+        const res = await axios.post("/api/image-enhance/image-enhance", { 
           prompt: imagePrompt, 
           model: imageModel 
-        });
-        setFinalResult(res.data.enhanced);
+        }, { withCredentials: true });
+
+        setFinalResult(res.data.enhanced); 
         setStep("result");
-        setLoading(false);
       }
     } catch (err) {
-      console.error("Error:", err);
+      console.error("Enhance Error:", err);
+    } finally {
       setLoading(false);
     }
   };
@@ -146,17 +125,17 @@ const ImagePromptEnhancer = ({ initialPrompt = "", initialModel = "midjourney" }
   const handleFinalize = async () => {
     setLoading(true);
     try {
-      // Mock Finalize (Replace with real API later)
-      setTimeout(() => {
-        const style = userAnswers[0] || "Photorealistic";
-        const light = userAnswers[1] || "Cinematic lighting";
-        const angle = userAnswers[2] || "Wide angle";
-        setFinalResult(`/imagine prompt: ${imagePrompt}, ${style}, ${light}, ${angle} --v 6.0 --ar 16:9`);
-        setStep("result");
-        setLoading(false);
-      }, 1500);
+      const res = await axios.post("/api/image-enhance/finalize-prompt", {
+        original: imagePrompt, 
+        answers: userAnswers,
+        model: imageModel
+      }, { withCredentials: true });
+
+      setFinalResult(res.data.enhanced);
+      setStep("result");
     } catch (err) {
-      console.error(err);
+      console.error("Finalize Error:", err);
+    } finally {
       setLoading(false);
     }
   };
@@ -166,166 +145,243 @@ const ImagePromptEnhancer = ({ initialPrompt = "", initialModel = "midjourney" }
     setFinalResult("");
     setGeneratedQuestions([]);
     setUserAnswers({});
-    // Note: We don't clear imagePrompt so user can tweak the same text
   };
 
   return (
-    <GlassCard className="h-full">
-      <div className="flex-none mb-4 md:mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 md:h-10 md:w-10 items-center justify-center rounded-xl bg-purple-500/10 text-purple-400">
-            <ImageIcon size={18} className="md:w-5 md:h-5" />
-          </div>
-          <h2 className="text-sm md:text-xl font-semibold text-white">Diffusion Enhancer</h2>
-        </div>
+    <div className="flex flex-col md:flex-row gap-6 h-full p-2">
+      {/* LEFT PANEL: INPUT & CONTROLS */}
+      <GlassPanel className="flex-1 p-6 flex flex-col">
         
-        {step === "input" && (
-          <RefineToggle enabled={isRefineMode} setEnabled={setIsRefineMode} />
+        {/* --- HEADER --- */}
+        <div className="flex items-center justify-between mb-8 shrink-0">
+           <div className="flex items-center gap-4">
+              <div className="relative h-12 w-12 rounded-2xl bg-gradient-to-br from-purple-500/20 to-blue-600/10 border border-white/10 flex items-center justify-center text-purple-400 shadow-[0_0_20px_rgba(168,85,247,0.1)] group-hover:shadow-[0_0_25px_rgba(168,85,247,0.2)] transition-shadow">
+                <ImageIcon size={22} />
+                <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-[#0A0A0A]" />
+              </div>
+              <div>
+                 <h2 className="text-base font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                    Visual Engine
+                    <span className="px-1.5 py-0.5 rounded text-[9px] bg-white/10 text-neutral-400 font-mono">v2.0</span>
+                 </h2>
+                 <p className="text-[11px] text-neutral-500 font-medium">Generative Art Optimization</p>
+              </div>
+           </div>
+           
+           <button 
+             onClick={() => setIsRefineMode(!isRefineMode)}
+             className={cn(
+               "flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-bold uppercase tracking-wider border transition-all relative z-20",
+               isRefineMode 
+                 ? "bg-purple-500/10 border-purple-500/30 text-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.15)]" 
+                 : "bg-white/5 border-white/10 text-neutral-400 hover:bg-white/10"
+             )}
+           >
+             <MessageCircle size={14} />
+             {isRefineMode ? "Interactive Mode" : "Fast Mode"}
+           </button>
+        </div>
+
+        {/* --- MODEL SELECTOR (Segmented Control Look) --- */}
+        <div className="relative z-10 mb-6 shrink-0">
+          <div className="flex items-center gap-2 mb-2 text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">
+             <Cpu size={12} /> Target Model
+          </div>
+          <div className="flex p-1 bg-black/40 border border-white/5 rounded-xl overflow-x-auto scrollbar-hide">
+            {MODELS.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setImageModel(m.id)}
+                className={cn(
+                  "flex-1 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase tracking-wide transition-all whitespace-nowrap border min-w-[100px]",
+                  imageModel === m.id
+                    ? "bg-neutral-800 text-white border-white/10 shadow-lg" 
+                    : "bg-transparent text-neutral-500 border-transparent hover:bg-white/5 hover:text-neutral-300"
+                )}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* --- CONTENT AREA --- */}
+        <div className="flex-1 relative flex flex-col min-h-[300px]">
+           <AnimatePresence mode="wait">
+             
+             {/* MODE 1: INPUT */}
+             {(step === 'input' || step === 'result') && (
+               <motion.div 
+                 key="input" 
+                 initial={{ opacity: 0, y: 10 }} 
+                 animate={{ opacity: 1, y: 0 }} 
+                 exit={{ opacity: 0, y: -10 }} 
+                 className="flex flex-col h-full"
+               >
+                 {/* VISIBLE INPUT CONTAINER */}
+                 <div className="flex-1 relative group/input">
+                    <div className="absolute inset-0 bg-gradient-to-b from-white/[0.03] to-transparent rounded-2xl pointer-events-none" />
+                    
+                    <div className={cn(
+                      "absolute inset-0 rounded-2xl border bg-black/20 transition-all duration-300 overflow-hidden flex flex-col",
+                      imagePrompt ? "border-purple-500/30 shadow-[0_0_20px_rgba(168,85,247,0.05)]" : "border-white/10 hover:border-white/20"
+                    )}>
+                       {/* Input Label Area */}
+                       <div className="h-9 border-b border-white/5 bg-white/[0.02] flex items-center px-4 gap-2">
+                          <Layers size={12} className="text-neutral-600" />
+                          <span className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider">Prompt Input</span>
+                       </div>
+
+                       <textarea
+                         value={imagePrompt}
+                         onChange={(e) => setImagePrompt(e.target.value)}
+                         placeholder="Describe your vision here... (e.g. A cyberpunk samurai standing in neon rain, cinematic lighting, 8k)"
+                         className="flex-1 w-full bg-transparent p-5 text-lg text-neutral-200 placeholder-neutral-700 outline-none resize-none font-medium leading-relaxed custom-scrollbar selection:bg-purple-500/30"
+                       />
+                       
+                       {/* Character Count / Footer of Input */}
+                       <div className="h-8 flex items-center justify-end px-4 text-[10px] text-neutral-600 font-mono border-t border-white/5">
+                          {imagePrompt.length} chars
+                       </div>
+                    </div>
+                 </div>
+                 
+                 <div className="pt-6 mt-auto shrink-0">
+                    <button
+                      onClick={handleInitialAction}
+                      disabled={loading || !imagePrompt.trim() || !user}
+                      className="relative w-full overflow-hidden rounded-xl bg-white py-4 text-sm font-bold text-black shadow-lg shadow-purple-900/20 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed group"
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-r from-purple-400 via-indigo-400 to-purple-400 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                      <div className="absolute inset-0 bg-white mix-blend-overlay opacity-0 group-hover:opacity-20" />
+                      
+                      <div className="relative flex items-center justify-center gap-2">
+                          {loading ? <Loader2 className="animate-spin text-black" size={18} /> : <Zap size={18} className="fill-black" />} 
+                          <span>Enhance Prompt</span>
+                      </div>
+                    </button>
+                 </div>
+               </motion.div>
+             )}
+
+             {/* MODE 2: QUESTIONS */}
+             {step === 'questions' && (
+               <motion.div 
+                 key="questions" 
+                 initial={{ opacity: 0, x: 20 }} 
+                 animate={{ opacity: 1, x: 0 }} 
+                 exit={{ opacity: 0, x: -20 }} 
+                 className="flex flex-col h-full absolute inset-0"
+               >
+                 <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+                    <div className="p-4 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200 flex items-center gap-3 shrink-0">
+                       <Sparkles size={16} className="text-purple-400 shrink-0 animate-pulse" />
+                       <span className="font-medium">AI requires specific details to optimize:</span>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      {generatedQuestions.map((q, idx) => (
+                        <div key={idx} className="space-y-2 group">
+                           <div className="flex items-center gap-2 text-[11px] font-bold text-neutral-500 uppercase tracking-wider ml-1 group-focus-within:text-purple-400 transition-colors">
+                              <span className="w-4 h-4 rounded bg-white/5 flex items-center justify-center text-[9px]">{idx + 1}</span>
+                              {q}
+                           </div>
+                           <input 
+                             autoFocus={idx === 0}
+                             className="w-full bg-[#111] border border-white/10 rounded-xl p-4 text-sm text-white focus:border-purple-500/50 focus:bg-purple-900/5 outline-none transition-all placeholder-neutral-700 shadow-inner"
+                             placeholder="Type details..."
+                             onChange={(e) => setUserAnswers(prev => ({...prev, [idx]: e.target.value}))}
+                           />
+                        </div>
+                      ))}
+                    </div>
+                    <div ref={questionsEndRef} />
+                 </div>
+                 <div className="pt-6 flex gap-3 border-t border-white/5 mt-4 shrink-0 bg-[#0A0A0A]">
+                    <button onClick={() => setStep('input')} className="px-6 py-3.5 rounded-xl bg-white/5 border border-white/5 text-neutral-400 hover:text-white transition-colors font-medium text-xs uppercase tracking-wider hover:bg-white/10">Back</button>
+                    <button onClick={handleFinalize} disabled={loading} className="flex-1 py-3.5 rounded-xl bg-white text-black font-bold hover:bg-neutral-200 transition-colors flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.2)]">
+                       {loading ? <Loader2 className="animate-spin" /> : <>Finalize <ArrowRight size={16} /></>}
+                    </button>
+                 </div>
+               </motion.div>
+             )}
+           </AnimatePresence>
+        </div>
+      </GlassPanel>
+
+      {/* RIGHT PANEL: TERMINAL OUTPUT */}
+      <GlassPanel className="hidden md:flex w-5/12 bg-black border-l border-white/10 p-0 flex-col">
+         {/* Terminal Header */}
+         <div className="h-12 border-b border-white/5 bg-white/[0.02] flex items-center justify-between px-4 shrink-0">
+            <div className="flex gap-2">
+               <div className="w-2.5 h-2.5 rounded-full bg-red-500/20 border border-red-500/50" />
+               <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/20 border border-yellow-500/50" />
+               <div className="w-2.5 h-2.5 rounded-full bg-green-500/20 border border-green-500/50" />
+            </div>
+            <div className="flex items-center gap-2 text-[10px] font-mono text-neutral-500 uppercase tracking-widest opacity-60">
+                <Terminal size={12} /> console.log
+            </div>
+         </div>
+         
+         {/* Terminal Body */}
+         <div className="flex-1 p-6 font-mono text-sm overflow-y-auto custom-scrollbar relative flex flex-col bg-[#050505]">
+            {!finalResult ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-neutral-700 gap-4 opacity-40">
+                 <div className="relative">
+                    <div className="absolute inset-0 bg-purple-500/20 blur-2xl rounded-full" />
+                    <Terminal size={48} className="relative z-10 text-neutral-800" />
+                 </div>
+                 <p className="text-xs uppercase tracking-widest font-bold">Waiting for input...</p>
+                 {loading && <p className="text-purple-400 mt-2 animate-pulse text-[10px]">Compiling Neural Weights...</p>}
+              </div>
+            ) : (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="relative h-full">
+                 <div className="text-neutral-500 mb-4 select-none text-[10px] uppercase tracking-wider border-b border-white/5 pb-2 flex justify-between">
+                    <span>// GENERATED_OUTPUT</span>
+                    <span className="text-purple-400">{imageModel}</span>
+                 </div>
+                 <div className="text-purple-300 leading-loose whitespace-pre-wrap selection:bg-purple-500/30">
+                    <span className="text-neutral-600 mr-2">$</span>
+                    {finalResult}
+                    <span className="inline-block w-2.5 h-4 bg-purple-500 ml-1 animate-pulse align-middle"/>
+                 </div>
+                 <div className="absolute top-0 right-0">
+                    <CopyButton text={finalResult} />
+                 </div>
+              </motion.div>
+            )}
+         </div>
+         
+         {step === 'result' && (
+           <div className="p-4 border-t border-white/10 bg-white/[0.02] shrink-0">
+             <button onClick={handleReset} className="w-full flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-500 hover:text-white transition-colors py-2 group">
+                <RefreshCcw size={12} className="group-hover:-rotate-180 transition-transform duration-500" /> Reset Console
+             </button>
+           </div>
+         )}
+      </GlassPanel>
+
+      {/* MOBILE RESULT (Hidden on Desktop) */}
+      <div className="md:hidden">
+        {step === 'result' && (
+             <GlassPanel className="p-5 border-purple-500/30 bg-purple-900/10">
+                <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-2">
+                    <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">Generated Output</span>
+                    <CopyButton text={finalResult} />
+                </div>
+                <div className="p-4 bg-black/50 rounded-xl border border-white/5 font-mono text-xs text-purple-200 leading-relaxed break-words shadow-inner">
+                    {finalResult}
+                </div>
+                <button 
+                    onClick={handleReset}
+                    className="w-full mt-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-xs font-bold text-white uppercase tracking-wider transition-all"
+                >
+                    Enhance Another
+                </button>
+             </GlassPanel>
         )}
       </div>
-
-      <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden"> 
-        <AnimatePresence mode="wait">
-          
-          {step === "input" && (
-            <motion.div
-              key="input"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="flex flex-col gap-4 h-full"
-            >
-              <div className="flex-none flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                {['midjourney', 'dalle', 'leonardo', 'banana'].map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setImageModel(m)}
-                    className={cn(
-                      "px-3 py-1.5 md:px-4 md:py-1.5 rounded-full text-[10px] md:text-xs font-medium border transition-all capitalize whitespace-nowrap",
-                      imageModel === m
-                        ? "bg-purple-500/20 border-purple-500/40 text-purple-200"
-                        : "bg-white/5 border-white/5 text-neutral-500 hover:bg-white/10 hover:text-neutral-300"
-                    )}
-                  >
-                    {m === 'banana' ? 'Stable Diff.' : m}
-                  </button>
-                ))}
-              </div>
-
-              <textarea
-                value={imagePrompt}
-                onChange={(e) => setImagePrompt(e.target.value)}
-                placeholder="Describe your creative vision..."
-                className="flex-1 w-full resize-none rounded-xl bg-black/40 p-4 text-sm leading-relaxed text-neutral-300 placeholder:text-neutral-600 focus:outline-none focus:ring-1 focus:ring-purple-500/50 transition-all border border-transparent focus:border-purple-500/20"
-              />
-
-              <div className="flex-none pt-2">
-                <button
-                  onClick={handleInitialAction}
-                  disabled={loading || !imagePrompt.trim()}
-                  className="w-full md:w-auto group relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-lg bg-neutral-800 border border-neutral-700 px-6 py-3 text-sm font-semibold text-white transition-all hover:bg-neutral-700 hover:border-neutral-600 active:scale-95 disabled:opacity-50"
-                >
-                  {loading ? (
-                    <Loader2 size={16} className="animate-spin text-purple-400" />
-                  ) : (
-                    <>
-                      <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                        {isRefineMode ? "Analyze & Refine" : "Enhance Now"}
-                      </span>
-                      {isRefineMode ? <MessageCircleQuestion size={16} className="text-purple-400" /> : <Sparkles size={16} className="text-purple-400" />}
-                    </>
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {step === "questions" && (
-            <motion.div
-              key="questions"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="flex flex-col h-full"
-            >
-              <div className="flex-none mb-3 rounded-lg bg-purple-500/10 border border-purple-500/20 p-3 text-xs md:text-sm text-purple-200 flex items-center gap-2">
-                <Sparkles size={14} className="shrink-0" />
-                <span>I need a few details to perfect this prompt:</span>
-              </div>
-
-              <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-4 scrollbar-thin scrollbar-thumb-white/10 pb-4">
-                {generatedQuestions.map((q, idx) => (
-                  <div key={idx} className="space-y-1.5">
-                    <label className="text-[11px] md:text-xs font-medium text-neutral-400 ml-1 block">
-                        {q}
-                    </label>
-                    <input 
-                      type="text"
-                      className="w-full rounded-lg bg-black/40 border border-white/10 px-3 py-3 text-sm text-white placeholder-neutral-700 focus:border-purple-500/50 focus:bg-purple-500/5 focus:outline-none transition-all"
-                      placeholder="Type your preference..."
-                      onChange={(e) => setUserAnswers(prev => ({ ...prev, [idx]: e.target.value }))}
-                    />
-                  </div>
-                ))}
-                <div ref={questionsEndRef} />
-              </div>
-
-              <div className="flex-none flex items-center justify-between pt-4 border-t border-white/5 bg-neutral-900/60 backdrop-blur-md">
-                 <button 
-                    onClick={() => setStep("input")} 
-                    className="text-xs font-medium text-neutral-500 hover:text-white transition-colors px-2 py-2"
-                 >
-                    Back
-                 </button>
-                 <button
-                  onClick={handleFinalize}
-                  disabled={loading}
-                  className="flex items-center gap-2 rounded-lg bg-purple-600 px-5 py-2.5 text-xs md:text-sm font-semibold text-white hover:bg-purple-500 transition-colors shadow-lg shadow-purple-900/20"
-                >
-                  {loading ? <Loader2 size={16} className="animate-spin" /> : "Finalize Prompt"}
-                  {!loading && <ArrowRight size={16} />}
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {step === "result" && (
-            <motion.div
-              key="result"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="flex flex-col h-full gap-4"
-            >
-              <div className="flex-none flex items-center gap-2 text-sm text-green-400">
-                <CheckCircle2 size={16} />
-                <span className="font-semibold">Enhancement Complete</span>
-              </div>
-
-              <div className="flex-1 relative overflow-hidden rounded-xl border border-purple-500/20 bg-purple-500/5 p-4">
-                <div className="mb-2 text-[10px] font-medium uppercase tracking-widest text-purple-400/80">
-                  {imageModel} Output
-                </div>
-                <pre className="whitespace-pre-wrap text-xs md:text-sm text-purple-100/90 font-mono h-full overflow-y-auto custom-scrollbar pb-8">
-                  {finalResult}
-                </pre>
-                <CopyButton text={finalResult} />
-              </div>
-
-              <div className="flex-none flex justify-end">
-                <button
-                  onClick={handleReset}
-                  className="flex items-center gap-2 rounded-lg bg-white/5 border border-white/10 px-4 py-2 text-xs font-medium text-neutral-300 hover:bg-white/10 hover:text-white transition-all"
-                >
-                  <RefreshCcw size={14} />
-                  Enhance Another
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-        </AnimatePresence>
-      </div>
-    </GlassCard>
+    </div>
   );
 };
 

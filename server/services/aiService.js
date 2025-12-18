@@ -1,186 +1,282 @@
 import OpenAI from "openai";
 import dotenv from "dotenv";
 
+import { loadPrompt } from "../utils/promptLoader.js";
+import { withRetry, validateJSON } from "../utils/llmGuard.js";
+import { auditSchema, enhancerSchema } from "../utils/jsonSchemas.js";
+
 dotenv.config();
 
-// Initialize Groq Client
-const groq = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY,
-  baseURL: "https://api.groq.com/openai/v1",
-});
+const PROMPT_VERSION = "v1";
 
-// ============================================================
-//  SECTION 1: MAIN IMAGE ENHANCER LOGIC (The "Home" Page)
-// ============================================================
+// ================= CLIENT FACTORY =================
+const createClient = (key) =>
+  new OpenAI({
+    apiKey: key,
+    baseURL: "https://api.groq.com/openai/v1",
+  });
 
-// --- THE ANALYST (Generates Questions for Raw Prompts) ---
-const ANALYST_PROMPT = `
-  You are a Senior Art Director for AI Generation.
-  Your goal is to identify AMBIGUITY in a user's raw idea.
-  
-  TASK:
-  1. Analyze the user's prompt.
-  2. Identify 3 critical visual elements that are MISSING (e.g., Lighting style, Camera Lens, Art Era, Material texture).
-  3. Generate 3 short, specific questions to extract this data.
-  
-  OUTPUT FORMAT (Strict JSON):
-  {
-    "questions": [
-       "Question 1?",
-       "Question 2?",
-       "Question 3?"
-    ]
+const groqVisuals = createClient(process.env.GROQ_API_KEY_VISUALS);
+const groqRemix = createClient(process.env.GROQ_API_KEY_REMIX);
+const groqAudit = createClient(process.env.GROQ_API_KEY_TEXT_AUDIT);
+const groqEnhance = createClient(process.env.GROQ_API_KEY_TEXT_ENHANCE);
+const groqSimulate = createClient(process.env.GROQ_API_KEY_TEXT_SIMULATE);
+
+// ================= SAFE JSON =================
+const safeJSON = (raw) => {
+  if (!raw) return null;
+  try {
+    return JSON.parse(
+      raw
+        .trim()
+        .replace(/^```json\s*|\s*```$/g, "")
+        .replace(/^```\s*|\s*```$/g, "")
+    );
+  } catch {
+    return null;
   }
-`;
-
-// --- THE ARCHITECT (Generates Final Prompts based on Model) ---
-const ARCHITECT_PROMPTS = {
-  midjourney: `
-    You are a Midjourney v6 Prompt Expert.
-    Task: SYNTHESIZE the user's raw idea + their answers into a specific Midjourney format.
-    RULES:
-    - Format: /imagine prompt: [Subject], [Environment], [Artistic Style], [Lighting], [Camera Parameters] --v 6.0
-    - Do NOT write natural sentences. Use visual tokens.
-    - Example: "Cyberpunk samurai, neon rain, volumetric lighting, shot on 35mm, hyper-realistic --ar 16:9 --v 6.0"
-  `,
-  dalle: `
-    You are a DALL-E 3 Narrative Designer.
-    Task: SYNTHESIZE the input into a rich, descriptive paragraph.
-    RULES:
-    - Write a cohesive description (3-4 sentences).
-    - Describe the *mood* and *physics* of the light based on the user's answers.
-  `,
-  leonardo: `
-    You are a Leonardo.ai Prompt Specialist.
-    Task: Create a prompt optimized for the "Leonardo Diffusion XL" model.
-    RULES:
-    - Use keywords like: "intricate details", "masterpiece", "trending on artstation".
-    - Focus on artistic styles (RPG, Oil Painting, 3D Render).
-  `,
-  banana: `
-    You are a Stable Diffusion XL Engineer.
-    Task: Create a keyword-heavy prompt using attention weighting syntax.
-    RULES:
-    - Use (keyword:weight) syntax for emphasis. Example: "(blue neon lighting:1.3)".
-    - Format: [Positive Prompt] ### [Negative Prompt].
-  `
 };
 
-/**
- * 1. Analyze Ambiguity (Home Page - Refine Mode)
- */
+// ================= PROMPT VALIDATION =================
+const isValidPrompt = (text, original) => {
+  if (!text || typeof text !== "string") return false;
+
+  const redFlags = [
+    /^(once upon a time|here (are|is)|chapter \d)/i,
+    /^["']/,
+    /^\d+\./m,
+  ];
+
+  if (redFlags.some((r) => r.test(text.trim()))) return false;
+
+  if (original && text.length < original.length * 0.6) return false;
+
+  return true;
+};
+
+// ================= NORMALIZATION =================
+const normalizeEnhancerOutput = (raw, original) => {
+  if (!raw || typeof raw !== "object") return null;
+
+  const result = {
+    logical: String(raw.logical || ""),
+    creative: String(raw.creative || ""),
+    optimized: String(raw.optimized || ""),
+  };
+
+  if (
+    !isValidPrompt(result.logical, original) ||
+    !isValidPrompt(result.creative, original) ||
+    !isValidPrompt(result.optimized, original)
+  ) {
+    return null;
+  }
+
+  return result;
+};
+
+//
+// =================================================
+// 🎨 VISUAL ENGINE (RESTORED — REQUIRED)
+// =================================================
+//
+
 export const analyzePromptAmbiguity = async (userPrompt) => {
+  const system = loadPrompt(`visuals/analyst.${PROMPT_VERSION}.txt`);
+
   try {
-    const completion = await groq.chat.completions.create({
-      messages: [
-        { role: "system", content: ANALYST_PROMPT },
-        { role: "user", content: `Analyze this prompt: "${userPrompt}"` },
-      ],
+    const res = await groqVisuals.chat.completions.create({
       model: "llama-3.3-70b-versatile",
-      response_format: { type: "json_object" }, 
-      temperature: 0.6,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.4,
     });
 
-    return JSON.parse(completion.choices[0]?.message?.content);
-  } catch (error) {
-    console.error("Analysis Error:", error);
-    return { questions: ["What is the art style?", "What is the lighting?", "What is the setting?"] };
+    return (
+      safeJSON(res.choices[0]?.message?.content) || {
+        questions: ["What style?", "What lighting?", "What setting?"],
+      }
+    );
+  } catch {
+    return {
+      questions: ["What style?", "What lighting?", "What setting?"],
+    };
   }
 };
 
-/**
- * 2. Synthesize Final Prompt (Home Page - Finalize)
- */
-export const synthesizeFinalPrompt = async (originalPrompt, answers, modelType) => {
-  const strategy = ARCHITECT_PROMPTS[modelType] || ARCHITECT_PROMPTS['midjourney'];
+export const synthesizeFinalPrompt = async (prompt, answers, model) => {
+  const map = {
+    midjourney: "visuals/midjourney",
+    dalle: "visuals/dalle",
+    leonardo: "visuals/leonardo",
+    "stable-diffusion": "visuals/stable",
+    "nano-banana": "visuals/nano-banana",
+  };
 
-  // Format context from Home Page flow
-  let clarificationContext = "";
-  if (answers) {
-    const answersArray = Array.isArray(answers) ? answers : Object.values(answers);
-    if (answersArray.length > 0) {
-      clarificationContext = "USER CLARIFICATIONS:\n";
-      answersArray.forEach((ans, i) => {
-        if (ans && ans.trim() !== "") {
-            clarificationContext += `- ${ans}\n`;
-        }
+  const system = loadPrompt(`${map[model] || map.midjourney}.${PROMPT_VERSION}.txt`);
+
+  const context = Array.isArray(answers)
+    ? answers.join("\n")
+    : Object.values(answers || {}).join("\n");
+
+  const res = await groqVisuals.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: `${prompt}\n${context}` },
+    ],
+    temperature: 0.7,
+  });
+
+  return res.choices[0]?.message?.content || prompt;
+};
+
+//
+// =================================================
+// 📝 TEXT ENGINE (FIXED PROMPT ENHANCER)
+// =================================================
+//
+
+export const auditTextPrompt = async (prompt) => {
+  const system = loadPrompt(`text/auditor.${PROMPT_VERSION}.txt`);
+  const model = "openai/gpt-oss-120b";
+
+  return withRetry({
+    attempts: 2,
+    task: async () => {
+      const res = await groqAudit.chat.completions.create({
+        model,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: prompt },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
       });
-    }
-  }
 
-  const userMessage = `RAW CONCEPT: "${originalPrompt}"\n${clarificationContext}\nTASK: Rewrite this into a professional prompt for ${modelType}.`;
+      const parsed = safeJSON(res.choices[0]?.message?.content);
+      if (!parsed || !validateJSON(auditSchema, parsed)) {
+        throw new Error("Audit JSON invalid");
+      }
 
-  try {
-    const completion = await groq.chat.completions.create({
-      messages: [
-        { role: "system", content: strategy },
-        { role: "user", content: userMessage },
-      ],
-      model: "llama-3.3-70b-versatile",
-      temperature: 0.7, 
-      max_tokens: 1024,
-    });
-
-    return completion.choices[0]?.message?.content || "Error generating prompt.";
-  } catch (error) {
-    console.error("Synthesis Error:", error);
-    return `Failed to enhance prompt: ${error.message}`;
-  }
+      return parsed;
+    },
+  });
 };
 
+export const enhanceTextPrompt = async (prompt) => {
+  const system = loadPrompt(`text/enhancer.${PROMPT_VERSION}.txt`);
+  const model = "llama-3.3-70b-versatile";
 
-// ============================================================
-//  SECTION 2: TEMPLATE REMIX LOGIC (The "Templates" Page)
-// ============================================================
+  return withRetry({
+    attempts: 2,
+    task: async () => {
+      const res = await groqEnhance.chat.completions.create({
+        model,
+        messages: [
+          { role: "system", content: system },
+          {
+            role: "user",
+            content: `
+USER_PROMPT:
+"${prompt}"
 
-// --- THE TEMPLATE FILLER (Optimized) ---
-const TEMPLATE_FILLER_PROMPT = `
-  You are an Expert Prompt Engineer.
-  
-  INPUTS:
-  1. Base Template: A prompt structure containing specific technical parameters and variables.
-  2. Context Pairs: The specific Questions the user was asked, and their Answers.
-  
-  TASK:
-  - Intelligently replace the placeholders or generic terms in the Template with the User's Answers.
-  - Ensure the final prompt is grammatically correct and flows naturally.
-  - STRICTLY PRESERVE all technical tags (e.g. --v 6.0, --ar 16:9, (weight:1.2)).
-  - Output ONLY the final prompt string. Do not add conversational filler.
+TASK:
+Rewrite this prompt into:
+- logical
+- creative
+- optimized
+
+Rules:
+- DO NOT generate content
+- DO NOT answer the prompt
+- Rewrite ONLY the prompt
+- Return ONLY valid JSON
+`,
+          },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.6,
+      });
+
+      const parsed = safeJSON(res.choices[0]?.message?.content);
+      const normalized = normalizeEnhancerOutput(parsed, prompt);
+
+      if (!normalized || !validateJSON(enhancerSchema, normalized)) {
+        throw new Error("Enhancer JSON invalid");
+      }
+
+      return normalized;
+    },
+  });
+};
+
+export const simulateTextPrompt = async (prompt, model) => {
+  const system = loadPrompt(`text/simulator.${PROMPT_VERSION}.txt`);
+
+  const res = await groqSimulate.chat.completions.create({
+    model,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.7,
+    max_tokens: 1200,
+  });
+
+  return res.choices[0]?.message?.content;
+};
+
+//
+// =================================================
+// 🔀 REMIX ENGINE (TEMPLATES) — REQUIRED EXPORT
+// =================================================
+//
+
+const violatesProtectedTokens = (output, tokens = []) =>
+  tokens.some((token) => !output.includes(token));
+
+export const synthesizeTemplate = async (
+  templateContent,
+  questions,
+  answers,
+  protectedTokens = []
+) => {
+  const system = loadPrompt(`remix/remix.${PROMPT_VERSION}.txt`);
+
+  const qaPairs = questions.map((q, i) => ({
+    question: q,
+    answer: answers[i] || "",
+  }));
+
+  const userContent = `
+REFERENCE PROMPT:
+${templateContent}
+
+USER ANSWERS:
+${JSON.stringify(qaPairs, null, 2)}
+
+PROTECTED TOKENS:
+${protectedTokens.join(", ")}
 `;
 
-/**
- * 3. Synthesize Template (Templates Page - Remix)
- * Takes the raw template + the Q&A pairs and merges them.
- */
-export const synthesizeTemplate = async (templateContent, questions, answers) => {
-  // Format the Q&A for the AI to understand the intent
-  let contextPairs = "";
-  
-  if (questions && answers && questions.length > 0) {
-    questions.forEach((q, i) => {
-      // Only include if the user actually answered
-      const ans = answers[i] || "Default/Unspecified";
-      contextPairs += `Question: "${q}"\nUser Answer: "${ans}"\n---\n`;
-    });
+  const res = await groqRemix.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: userContent },
+    ],
+    temperature: 0.5,
+  });
+
+  const output = res.choices[0]?.message?.content || templateContent;
+
+  if (violatesProtectedTokens(output, protectedTokens)) {
+    return templateContent;
   }
 
-  try {
-    const completion = await groq.chat.completions.create({
-      messages: [
-        { role: "system", content: TEMPLATE_FILLER_PROMPT },
-        { 
-          role: "user", 
-          content: `Base Template: "${templateContent}"\n\nContext Pairs:\n${contextPairs}` 
-        },
-      ],
-      model: "llama-3.3-70b-versatile",
-      temperature: 0.6, // Slightly lower temp for adherence to template structure
-      max_tokens: 1024,
-    });
-
-    return completion.choices[0]?.message?.content || "Error synthesizing template.";
-  } catch (error) {
-    console.error("Template Synthesis Error:", error);
-    throw new Error("Failed to remix template.");
-  }
+  return output;
 };

@@ -36,7 +36,7 @@
 # Required
 NODE_ENV=production
 PORT=5000
-MONGO_URI=mongodb+srv://...
+MONGO_URI=<MongoDB Atlas credential redacted; provide MONGO_URI through environment configuration>
 SESSION_SECRET=your-super-secret-key-here
 
 # OAuth
@@ -157,7 +157,7 @@ Create `public/_headers`:
 
 #### 3. Connection String
 - Use in `MONGO_URI` environment variable
-- Format: `mongodb+srv://username:password@cluster.mongodb.net/dbname`
+- Format: `<MongoDB Atlas credential redacted; provide MONGO_URI through environment configuration>`
 
 #### 4. Indexes
 ```javascript
